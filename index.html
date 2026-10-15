@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Морской Бой</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: #080d1a;
+      --panel: #111a2e;
+      --accent: #00e5ff;
+      --gold: #fbbf24;
+      --hit: #ff3b5c;
+      --sunk: #991b1b;
+      --text: #f1f5f9;
+    }
+    * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 10px 12px 18px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at top, #13203c, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 19px;
+      margin: 0;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent);
+      text-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+    }
+    .top-bar {
+      width: 100%;
+      max-width: 350px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .top-actions { display: flex; gap: 6px; }
+    .status-box {
+      width: 100%;
+      max-width: 350px;
+      background: var(--panel);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      border-radius: 12px;
+      padding: 9px 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    }
+    .board-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #94a3b8;
+      margin: 3px 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 2px;
+      background: rgba(0, 229, 255, 0.18);
+      padding: 3px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.12);
+    }
+    .grid.main-grid { width: 320px; height: 320px; }
+    .grid.mini-grid { width: 155px; height: 155px; }
+
+    .cell {
+      background: #0c1629;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform 0.1s, background 0.15s;
+      position: relative;
+    }
+    .cell:active { transform: scale(0.92); }
+    .cell.ship {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      box-shadow: inset 0 0 4px rgba(255,255,255,0.35);
+    }
+    .cell.ship-selected {
+      background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+      box-shadow: 0 0 8px rgba(251, 191, 36, 0.8), inset 0 0 4px #fff !important;
+      z-index: 2;
+    }
+    .cell.miss { background: #0f172a; }
+    .cell.miss::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      background: #64748b;
+      border-radius: 50%;
+    }
+    .cell.hit {
+      background: radial-gradient(circle, #ff6b6b, var(--hit));
+      animation: pop 0.25s ease-out;
+    }
+    .cell.hit::after { content: "🔥"; font-size: 13px; }
+    .cell.sunk { background: var(--sunk); border: 1px solid #ef4444; }
+    .cell.sunk::after { content: "☠️"; font-size: 13px; }
+    .mini-grid .cell.hit::after,
+    .mini-grid .cell.sunk::after { font-size: 8px; }
+
+    @keyframes pop { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+    .shake { animation: shake 0.25s ease-in-out; }
+
+    .dock-bar {
+      width: 100%;
+      max-width: 320px;
+      background: rgba(17, 26, 46, 0.9);
+      border: 1px dashed rgba(0, 229, 255, 0.35);
+      border-radius: 8px;
+      padding: 6px 10px;
+      margin-top: 6px;
+      font-size: 12px;
+      text-align: center;
+      color: #cbd5e1;
+    }
+    .controls {
+      width: 100%;
+      max-width: 350px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-top: 8px;
+    }
+    .row { display: flex; gap: 6px; width: 100%; }
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+    }
+    button:active { transform: scale(0.96); }
+    button.primary { background: linear-gradient(135deg, #00b4d8, #0077b6); border: none; }
+    button.success { background: linear-gradient(135deg, #10b981, #059669); border: none; }
+    button.warning { background: linear-gradient(135deg, #f59e0b, #d97706); border: none; }
+    button.danger { background: linear-gradient(135deg, #ef4444, #b91c1c); border: none; }
+    button.icon-btn { flex: 0 0 42px; padding: 7px; background: var(--panel); font-size: 14px; }
+
+    .bottom-hud {
+      width: 100%;
+      max-width: 340px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      gap: 10px;
+    }
+    .stats-card {
+      flex: 1;
+      background: var(--panel);
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    input {
+      flex: 1;
+      background: #0c1629;
+      border: 1px solid #334155;
+      color: white;
+      padding: 9px;
+      border-radius: 10px;
+      font-size: 14px;
+      text-align: center;
+      letter-spacing: 2px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 8, 18, 0.85);
+      backdrop-filter: blur(5px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 16px;
+    }
+    .modal {
+      width: 100%;
+      max-width: 340px;
+      background: var(--panel);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .modal h2 { margin: 0 0 10px; font-size: 16px; color: var(--gold); text-align: center; }
+    .leader-list {
+      max-height: 270px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .leader-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(12, 22, 41, 0.9);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .leader-item.me { border: 1px solid var(--accent); background: rgba(0, 229, 255, 0.12); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    <h1>⚓ Морской Бой</h1>
+    <div class="top-actions">
+      <button class="icon-btn" onclick="openLeaderboard()">🏆</button>
+      <button class="icon-btn" id="soundBtn" onclick="toggleSound()">🔊</button>
+    </div>
+  </div>
+
+  <div class="status-box" id="statusText">
+    Нажми на корабль, чтобы переместить или повернуть его!
+  </div>
+
+  <!-- ЭКРАН РАССТАНОВКИ -->
+  <div id="setupView" style="display:flex; flex-direction:column; align-items:center;">
+    <div class="board-label">Твой флот (тапни по кораблю для выбора)</div>
+    <div class="grid main-grid" id="setupGrid"></div>
+
+    <div class="dock-bar" id="dockInfo">
+      ✅ Все 10 кораблей на позициях.
+    </div>
+
+    <div class="controls">
+      <div class="row">
+        <button class="warning" onclick="rotateAction()">🔄 Повернуть</button>
+        <button onclick="removeOrClearAction()" id="clearBtn">🧹 Очистить</button>
+        <button onclick="randomizeMyBoard()">🎲 Авто</button>
+      </div>
+
+      <button class="success" onclick="startAiGame()">🤖 В бой против ИИ (+25 🏆)</button>
+
+      <div class="row">
+        <button class="primary" onclick="createPvPRoom()">⚔️ Создать PvP</button>
+        <input type="text" id="roomInput" maxlength="4" placeholder="Код" />
+        <button class="primary" style="flex:0.65" onclick="joinPvPRoom()">Войти</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ЭКРАН БОЯ -->
+  <div id="battleView" class="hidden" style="display:flex; flex-direction:column; align-items:center;">
+    <div class="board-label">🎯 Радар противника (нажимай для выстрела)</div>
+    <div class="grid main-grid" id="enemyGrid"></div>
+
+    <div class="bottom-hud">
+      <div>
+        <div class="board-label">🛡 Твой флот</div>
+        <div class="grid mini-grid" id="myMiniGrid"></div>
+      </div>
+      <div class="stats-card">
+        <div>🎯 <b>Враг:</b> <span id="enemyName">Кибер-Адмирал</span></div>
+        <div>🚢 Твои палубы: <b id="myDecks">20</b></div>
+        <div>💥 Палубы врага: <b id="enemyDecks">20</b></div>
+        <button class="danger" style="width:100%; margin-top:8px;" onclick="backToMenu()">🏳️ В меню</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО РЕКОРДОВ -->
+  <div id="leaderboardModal" class="modal-backdrop hidden" onclick="closeLeaderboard()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h2>🏆 ЗАЛ СЛАВЫ И РЕКОРДЫ</h2>
+      <div id="leaderList" class="leader-list"></div>
+      <button class="primary" style="width:100%" onclick="closeLeaderboard()">Закрыть</button>
+    </div>
+  </div>
+
+<script>
+  // Работает и вне Telegram (в браузере / превью): если SDK не загрузился — используем заглушку
+  const tg = (window.Telegram && window.Telegram.WebApp) || {};
+  if (tg.expand) tg.expand();
+
+  const SIZE = 10;
+  const FLEET = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
+  let soundOn = true;
+  let audioCtx = null;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+
+  let myBoard = [], myShips = [];
+  let selectedShipIdx = null;
+  let unplacedQueue = [];
+  let placeHoriz = true;
+
+  let enemyBoard = [], enemyShips = [];
+  let mode = "ai";
+  let myTurn = true;
+  let gameOver = false;
+
+  // P2P Мультиплеер (PeerJS без сервера)
+  let peer = null;
+  let conn = null;
+  let isHost = false;
+
+  // Статистика игрока (Telegram CloudStorage + localStorage)
+  let playerStats = { wins: 0, losses: 0, rating: 100 };
+
+  function loadStats() {
+    try {
+      const local = localStorage.getItem("bs_stats_v1");
+      if (local) playerStats = JSON.parse(local);
+      if (tg.CloudStorage) {
+        tg.CloudStorage.getItem("bs_stats_v1", (err, val) => {
+          if (!err && val) {
+            playerStats = JSON.parse(val);
+            try { localStorage.setItem("bs_stats_v1", val); } catch (e) {}
+          }
+        });
+      }
+    } catch (e) {}
+  }
+
+  function recordResult(won, isPvp) {
+    const delta = won ? (isPvp ? 40 : 25) : -10;
+    playerStats.wins += won ? 1 : 0;
+    playerStats.losses += won ? 0 : 1;
+    playerStats.rating = Math.max(0, playerStats.rating + delta);
+    const raw = JSON.stringify(playerStats);
+    try { localStorage.setItem("bs_stats_v1", raw); } catch (e) {}
+    try {
+      if (tg.CloudStorage) tg.CloudStorage.setItem("bs_stats_v1", raw);
+    } catch (e) {}
+  }
+
+  function getUserName() {
+    return tg.initDataUnsafe?.user?.first_name || "Капитан";
+  }
+
+  // ЗВУКИ И ВИБРАЦИЯ
+  function playSfx(type) {
+    if (!soundOn || !audioCtx) return;
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+
+    if (type === "miss") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(110, now + 0.14);
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.14);
+      osc.start(now); osc.stop(now + 0.14);
+    } else if (type === "hit") {
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(45, now + 0.25);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+      osc.start(now); osc.stop(now + 0.25);
+    } else if (type === "sunk") {
+      osc.type = "square";
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(35, now + 0.45);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.45);
+      osc.start(now); osc.stop(now + 0.45);
+    }
+  }
+
+  function haptic(kind) {
+    if (!tg.HapticFeedback) return;
+    if (kind === "miss") tg.HapticFeedback.impactOccurred("light");
+    else if (kind === "hit") tg.HapticFeedback.impactOccurred("medium");
+    else if (kind === "sunk") tg.HapticFeedback.notificationOccurred("success");
+    else if (kind === "error") tg.HapticFeedback.notificationOccurred("error");
+  }
+
+  function toggleSound() {
+    soundOn = !soundOn;
+    document.getElementById("soundBtn").textContent = soundOn ? "🔊" : "🔇";
+  }
+
+  // РЕДАКТОР ФЛОТА
+  function rebuildBoardFromShips() {
+    myBoard = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+    for (const ship of myShips) {
+      for (const [r, c] of ship) myBoard[r][c] = 1;
+    }
+  }
+
+  function canPlaceShip(coords, ignoreIdx = null) {
+    const temp = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+    myShips.forEach((ship, idx) => {
+      if (idx === ignoreIdx) return;
+      ship.forEach(([r, c]) => (temp[r][c] = 1));
+    });
+    for (const [r, c] of coords) {
+      if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return false;
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && temp[nr][nc] !== 0) return false;
+        }
+    }
+    return true;
+  }
+
+  function buildCoords(r, c, len, horiz) {
+    const startR = horiz ? r : Math.min(r, SIZE - len);
+    const startC = horiz ? Math.min(c, SIZE - len) : c;
+    const coords = [];
+    for (let i = 0; i < len; i++) coords.push([horiz ? startR : startR + i, horiz ? startC + i : startC]);
+    return coords;
+  }
+
+  function isShipHorizontal(ship) {
+    return ship.length <= 1 || ship[0][0] === ship[1][0];
+  }
+
+  function onSetupCellClick(r, c) {
+    const clickedIdx = myShips.findIndex(s => s.some(([sr, sc]) => sr === r && sc === c));
+    if (clickedIdx !== -1) {
+      if (selectedShipIdx === clickedIdx) {
+        rotateSelectedShip();
+      } else {
+        selectedShipIdx = clickedIdx;
+        haptic("miss");
+        setStatus("Корабль выбран! Тапни на пустую клетку для переноса или нажми <b>«🔄 Повернуть»</b>.");
+        updateSetupUI();
+      }
+      return;
+    }
+    if (selectedShipIdx !== null) {
+      const ship = myShips[selectedShipIdx];
+      const newCoords = buildCoords(r, c, ship.length, isShipHorizontal(ship));
+      if (canPlaceShip(newCoords, selectedShipIdx)) {
+        myShips[selectedShipIdx] = newCoords;
+        rebuildBoardFromShips();
+        haptic("hit");
+        setStatus("✅ Корабль перемещен!");
+        updateSetupUI();
+      } else {
+        triggerInvalidShake("⚠️ Корабли не должны соприкасаться!");
+      }
+      return;
+    }
+    if (unplacedQueue.length > 0) {
+      const nextLen = unplacedQueue[0];
+      const newCoords = buildCoords(r, c, nextLen, placeHoriz);
+      if (canPlaceShip(newCoords, null)) {
+        unplacedQueue.shift();
+        myShips.push(newCoords);
+        selectedShipIdx = myShips.length - 1;
+        rebuildBoardFromShips();
+        haptic("hit");
+        updateSetupUI();
+      } else {
+        triggerInvalidShake("⚠️ Слишком близко к другому кораблю!");
+      }
+    }
+  }
+
+  function rotateAction() {
+    if (selectedShipIdx !== null) rotateSelectedShip();
+    else if (unplacedQueue.length > 0) { placeHoriz = !placeHoriz; haptic("miss"); updateSetupUI(); }
+    else setStatus("👆 Сначала тапни на корабль на поле!");
+  }
+
+  function rotateSelectedShip() {
+    if (selectedShipIdx === null) return;
+    const ship = myShips[selectedShipIdx];
+    if (ship.length === 1) return;
+    const newHoriz = !isShipHorizontal(ship);
+    const [baseR, baseC] = ship[0];
+    for (let offset = 0; offset < ship.length; offset++) {
+      const tryR = newHoriz ? baseR : Math.max(0, baseR - offset);
+      const tryC = newHoriz ? Math.max(0, baseC - offset) : baseC;
+      const candidate = buildCoords(tryR, tryC, ship.length, newHoriz);
+      if (canPlaceShip(candidate, selectedShipIdx)) {
+        myShips[selectedShipIdx] = candidate;
+        rebuildBoardFromShips();
+        haptic("hit");
+        setStatus("🔄 Корабль повернут!");
+        updateSetupUI();
+        return;
+      }
+    }
+    triggerInvalidShake("⚠️ Нет места для разворота!");
+  }
+
+  function removeOrClearAction() {
+    if (selectedShipIdx !== null) {
+      const removed = myShips.splice(selectedShipIdx, 1)[0];
+      unplacedQueue.push(removed.length);
+      unplacedQueue.sort((a, b) => b - a);
+      selectedShipIdx = null;
+    } else {
+      myShips = [];
+      unplacedQueue = [...FLEET];
+      selectedShipIdx = null;
+    }
+    rebuildBoardFromShips();
+    haptic("miss");
+    updateSetupUI();
+  }
+
+  function triggerInvalidShake(msg) {
+    haptic("error");
+    setStatus(msg);
+    const grid = document.getElementById("setupGrid");
+    grid.classList.remove("shake");
+    void grid.offsetWidth;
+    grid.classList.add("shake");
+  }
+
+  function updateSetupUI() {
+    const el = document.getElementById("setupGrid");
+    el.innerHTML = "";
+    const selectedCoords = selectedShipIdx !== null ? myShips[selectedShipIdx] : [];
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        if (myBoard[r][c] === 1) {
+          cell.classList.add("ship");
+          if (selectedCoords.some(([sr, sc]) => sr === r && sc === c)) cell.classList.add("ship-selected");
+        }
+        cell.onclick = () => onSetupCellClick(r, c);
+        el.appendChild(cell);
+      }
+    }
+    const dockEl = document.getElementById("dockInfo");
+    document.getElementById("clearBtn").textContent = selectedShipIdx !== null ? "🗑️ Убрать" : "🧹 Очистить";
+    if (unplacedQueue.length > 0) {
+      dockEl.innerHTML = `📦 <b>В доке (${unplacedQueue.length}):</b> ставим <b>${unplacedQueue[0]}-палубный</b> (${placeHoriz ? "↔️" : "↕️"})`;
+    } else {
+      dockEl.innerHTML = `✅ Все 10 кораблей в строю! Тапни по любому для переноса.`;
+    }
+  }
+
+  function generateRandomSetup() {
+    while (true) {
+      const board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+      const ships = [];
+      let ok = true;
+      for (const len of FLEET) {
+        let placed = false;
+        for (let t = 0; t < 250; t++) {
+          const horiz = Math.random() < 0.5;
+          const r = horiz ? Math.floor(Math.random() * SIZE) : Math.floor(Math.random() * (SIZE - len + 1));
+          const c = horiz ? Math.floor(Math.random() * (SIZE - len + 1)) : Math.floor(Math.random() * SIZE);
+          const coords = [];
+          for (let i = 0; i < len; i++) coords.push([horiz ? r : r + i, horiz ? c + i : c]);
+          let valid = true;
+          for (const [cr, cc] of coords)
+            for (let dr = -1; dr <= 1; dr++)
+              for (let dc = -1; dc <= 1; dc++) {
+                const nr = cr + dr, nc = cc + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] !== 0) valid = false;
+              }
+          if (valid) {
+            coords.forEach(([sr, sc]) => (board[sr][sc] = 1));
+            ships.push(coords);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) { ok = false; break; }
+      }
+      if (ok) return { board, ships };
+    }
+  }
+
+  function randomizeMyBoard() {
+    const res = generateRandomSetup();
+    myBoard = res.board;
+    myShips = res.ships;
+    selectedShipIdx = null;
+    unplacedQueue = [];
+    haptic("miss");
+    updateSetupUI();
+  }
+
+  function checkReadyToStart() {
+    if (unplacedQueue.length > 0 || myShips.length < 10) {
+      triggerInvalidShake(`⚠️ Выставь оставшиеся корабли из дока (${unplacedQueue.length} шт.)!`);
+      return false;
+    }
+    return true;
+  }
+
+  // ===== ОБЩИЕ УТИЛИТЫ =====
+  function setStatus(html) {
+    document.getElementById("statusText").innerHTML = html;
+  }
+
+  function askConfirm(msg, cb) {
+    if (tg.isVersionAtLeast && tg.isVersionAtLeast("6.2") && tg.showConfirm) tg.showConfirm(msg, cb);
+    else cb(window.confirm(msg));
+  }
+
+  function showView(name) {
+    document.getElementById("setupView").classList.toggle("hidden", name !== "setup");
+    document.getElementById("battleView").classList.toggle("hidden", name !== "battle");
+  }
+
+  // ===== СОСТОЯНИЕ БОЯ =====
+  // Состояния клеток выстрелов: 0 — не стреляли, 1 — раскрытый корабль, 2 — мимо, 3 — ранен, 4 — потоплен
+  let enemyView = [];   // что я знаю о поле врага (радар)
+  let incoming = [];    // выстрелы врага по моему полю
+  let enemyCells = [], miniCells = [];
+  let inBattle = false;
+  let enemyName = "Кибер-Адмирал";
+  let connectTimer = null;
+
+  function emptyGrid() {
+    return Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+  }
+
+  function inRange(r, c) {
+    return r >= 0 && r < SIZE && c >= 0 && c < SIZE;
+  }
+
+  function markSunk(shots, cells) {
+    for (const [r, c] of cells) shots[r][c] = 4;
+    for (const [r, c] of cells)
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (inRange(nr, nc) && shots[nr][nc] === 0) shots[nr][nc] = 2;
+        }
+  }
+
+  function applyShot(board, ships, shots, r, c) {
+    if (board[r][c] !== 1) {
+      shots[r][c] = 2;
+      return { res: "miss" };
+    }
+    shots[r][c] = 3;
+    const ship = ships.find(s => s.some(([a, b]) => a === r && b === c));
+    if (ship.every(([a, b]) => shots[a][b] === 3)) {
+      markSunk(shots, ship);
+      return { res: "sunk", cells: ship };
+    }
+    return { res: "hit" };
+  }
+
+  function allSunk(ships, shots) {
+    return ships.every(s => s.every(([a, b]) => shots[a][b] === 4));
+  }
+
+  function countHits(shots) {
+    let n = 0;
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++) if (shots[r][c] === 3 || shots[r][c] === 4) n++;
+    return n;
+  }
+
+  function feedback(res) {
+    playSfx(res);
+    haptic(res);
+  }
+
+  function stateClass(s) {
+    return s === 2 ? "miss" : s === 3 ? "hit" : s === 4 ? "sunk" : s === 1 ? "ship" : "";
+  }
+
+  function initBattleGrids() {
+    const eg = document.getElementById("enemyGrid");
+    const mg = document.getElementById("myMiniGrid");
+    eg.innerHTML = "";
+    mg.innerHTML = "";
+    enemyCells = emptyGrid();
+    miniCells = emptyGrid();
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const ec = document.createElement("div");
+        ec.className = "cell";
+        ec.onclick = () => onEnemyCellClick(r, c);
+        eg.appendChild(ec);
+        enemyCells[r][c] = ec;
+
+        const mc = document.createElement("div");
+        mc.className = "cell";
+        mg.appendChild(mc);
+        miniCells[r][c] = mc;
+      }
+    }
+  }
+
+  function updateBattle() {
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const ecls = stateClass(enemyView[r][c]);
+        enemyCells[r][c].className = "cell" + (ecls ? " " + ecls : "");
+        const s = incoming[r][c];
+        const mcls = s ? stateClass(s) : (myBoard[r][c] === 1 ? "ship" : "");
+        miniCells[r][c].className = "cell" + (mcls ? " " + mcls : "");
+      }
+    }
+    document.getElementById("myDecks").textContent = 20 - countHits(incoming);
+    document.getElementById("enemyDecks").textContent = 20 - countHits(enemyView);
+    document.getElementById("enemyName").textContent = enemyName;
+  }
+
+  function beginBattle(firstTurn) {
+    enemyView = emptyGrid();
+    incoming = emptyGrid();
+    gameOver = false;
+    inBattle = true;
+    myTurn = firstTurn;
+    selectedShipIdx = null;
+    showView("battle");
+    initBattleGrids();
+    updateBattle();
+    setStatus(myTurn ? "🎯 Твой ход! Стреляй по радару." : "⏳ Ход соперника…");
+  }
+
+  function finish(won, msg) {
+    gameOver = true;
+    myTurn = false;
+    recordResult(won, mode === "pvp");
+    const delta = won ? (mode === "pvp" ? 40 : 25) : -10;
+    if (!won && mode === "ai") {
+      for (let r = 0; r < SIZE; r++)
+        for (let c = 0; c < SIZE; c++)
+          if (enemyBoard[r][c] === 1 && enemyView[r][c] === 0) enemyView[r][c] = 1;
+      updateBattle();
+    }
+    setStatus(`${msg}<br>Рейтинг: <b>${playerStats.rating}</b> (${delta > 0 ? "+" : ""}${delta})`);
+    haptic(won ? "sunk" : "error");
+  }
+
+  // ===== ИГРА ПРОТИВ ИИ =====
+  function startAiGame() {
+    if (!checkReadyToStart()) return;
+    cleanupPeer();
+    mode = "ai";
+    const res = generateRandomSetup();
+    enemyBoard = res.board;
+    enemyShips = res.ships;
+    enemyName = "Кибер-Адмирал";
+    beginBattle(true);
+  }
+
+  function aiPickCell() {
+    const hits = [];
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++) if (incoming[r][c] === 3) hits.push([r, c]);
+
+    if (hits.length) {
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      let best = [], bestW = 0;
+      for (const [hr, hc] of hits) {
+        for (const [dr, dc] of dirs) {
+          const nr = hr + dr, nc = hc + dc;
+          if (!inRange(nr, nc) || incoming[nr][nc] !== 0) continue;
+          const pr = hr - dr, pc = hc - dc;
+          const w = inRange(pr, pc) && incoming[pr][pc] === 3 ? 2 : 1;
+          if (w > bestW) { bestW = w; best = [[nr, nc]]; }
+          else if (w === bestW) best.push([nr, nc]);
+        }
+      }
+      if (best.length) return best[Math.floor(Math.random() * best.length)];
+    }
+
+    const parity = [], any = [];
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++) {
+        if (incoming[r][c] !== 0) continue;
+        any.push([r, c]);
+        if ((r + c) % 2 === 0) parity.push([r, c]);
+      }
+    const pool = parity.length ? parity : any;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function aiTurn() {
+    if (!inBattle || gameOver || mode !== "ai") return;
+    const [r, c] = aiPickCell();
+    const out = applyShot(myBoard, myShips, incoming, r, c);
+    feedback(out.res);
+    updateBattle();
+    if (allSunk(myShips, incoming)) {
+      finish(false, "💀 Поражение! Твой флот потоплен.");
+      return;
+    }
+    if (out.res === "miss") {
+      myTurn = true;
+      setStatus("🎯 Твой ход!");
+    } else {
+      setStatus(out.res === "sunk" ? "💀 Враг потопил твой корабль!" : "🔥 Враг попал по твоему кораблю!");
+      setTimeout(aiTurn, 800);
+    }
+  }
+
+  // ===== ВЫСТРЕЛ ИГРОКА =====
+  function onEnemyCellClick(r, c) {
+    if (!inBattle || gameOver || !myTurn) return;
+    if (enemyView[r][c] !== 0) return;
+
+    if (mode === "ai") {
+      const out = applyShot(enemyBoard, enemyShips, enemyView, r, c);
+      feedback(out.res);
+      updateBattle();
+      if (allSunk(enemyShips, enemyView)) {
+        finish(true, "🏆 Победа! Вражеский флот уничтожен.");
+        return;
+      }
+      if (out.res === "miss") {
+        myTurn = false;
+        setStatus("⏳ Ход врага…");
+        setTimeout(aiTurn, 800);
+      } else {
+        setStatus(out.res === "sunk" ? "💥 Потопил! Стреляй ещё." : "🔥 Попал! Стреляй ещё.");
+      }
+    } else if (mode === "pvp" && conn && conn.open) {
+      myTurn = false; // ждём ответ соперника
+      setStatus("📡 Выстрел…");
+      conn.send({ t: "shot", r, c });
+    }
+  }
+
+  // ===== PvP (PeerJS) =====
+  const PEER_PREFIX = "morboy-";
+
+  function cleanupPeer() {
+    clearTimeout(connectTimer);
+    try { if (conn) conn.close(); } catch (e) {}
+    try { if (peer) peer.destroy(); } catch (e) {}
+    conn = null;
+    peer = null;
+    isHost = false;
+  }
+
+  function createPvPRoom() {
+    if (!checkReadyToStart()) return;
+    if (typeof Peer === "undefined") { setStatus("⚠️ PeerJS не загрузился. Проверь интернет."); return; }
+    cleanupPeer();
+    isHost = true;
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    peer = new Peer(PEER_PREFIX + code);
+    peer.on("open", () => {
+      document.getElementById("roomInput").value = code;
+      setStatus(`⚔️ Комната создана! Код: <b>${code}</b><br>Отправь его сопернику и жди…`);
+    });
+    peer.on("connection", c => {
+      if (conn) { c.close(); return; }
+      conn = c;
+      bindConn();
+    });
+    peer.on("error", err => {
+      if (err.type === "unavailable-id") createPvPRoom();
+      else setStatus("⚠️ Ошибка сети: " + err.type);
+    });
+  }
+
+  function joinPvPRoom() {
+    const code = document.getElementById("roomInput").value.trim();
+    if (!/^\d{4}$/.test(code)) {
+      triggerInvalidShake("⚠️ Введи 4-значный код комнаты!");
+      return;
+    }
+    if (!checkReadyToStart()) return;
+    if (typeof Peer === "undefined") { setStatus("⚠️ PeerJS не загрузился. Проверь интернет."); return; }
+    cleanupPeer();
+    isHost = false;
+    setStatus("🔌 Подключаюсь к комнате " + code + "…");
+    peer = new Peer();
+    peer.on("open", () => {
+      conn = peer.connect(PEER_PREFIX + code, { reliable: true });
+      bindConn();
+      conn.on("open", () => {
+        clearTimeout(connectTimer);
+        conn.send({ t: "hello", name: getUserName() });
+      });
+      connectTimer = setTimeout(() => {
+        if (!inBattle) {
+          cleanupPeer();
+          setStatus("⚠️ Не удалось подключиться. Проверь код.");
+        }
+      }, 12000);
+    });
+    peer.on("error", err => {
+      clearTimeout(connectTimer);
+      setStatus(err.type === "peer-unavailable" ? "⚠️ Комната не найдена." : "⚠️ Ошибка сети: " + err.type);
+    });
+  }
+
+  function bindConn() {
+    conn.on("data", handleMsg);
+    conn.on("close", onConnClose);
+    conn.on("error", () => onConnClose());
+  }
+
+  function onConnClose() {
+    if (inBattle && mode === "pvp" && !gameOver) {
+      gameOver = true;
+      myTurn = false;
+      setStatus("🔌 Соперник отключился. Партия окончена.");
+    } else if (!inBattle) {
+      conn = null;
+    }
+  }
+
+  function handleMsg(m) {
+    if (!m || typeof m !== "object") return;
+
+    if (m.t === "hello" && isHost && !inBattle) {
+      enemyName = String(m.name || "Соперник").slice(0, 20);
+      conn.send({ t: "start", name: getUserName() });
+      mode = "pvp";
+      beginBattle(true);
+    } else if (m.t === "start" && !isHost && !inBattle) {
+      enemyName = String(m.name || "Соперник").slice(0, 20);
+      mode = "pvp";
+      beginBattle(false);
+    } else if (m.t === "shot" && inBattle && mode === "pvp" && !gameOver) {
+      const { r, c } = m;
+      if (!Number.isInteger(r) || !Number.isInteger(c) || !inRange(r, c) || incoming[r][c] !== 0) return;
+      const out = applyShot(myBoard, myShips, incoming, r, c);
+      const over = allSunk(myShips, incoming);
+      conn.send({ t: "result", r, c, res: out.res, cells: out.cells || null, over });
+      feedback(out.res);
+      updateBattle();
+      if (over) {
+        finish(false, "💀 Поражение! Твой флот потоплен.");
+      } else if (out.res === "miss") {
+        myTurn = true;
+        setStatus("🎯 Твой ход!");
+      } else {
+        setStatus(out.res === "sunk" ? "💀 Соперник потопил твой корабль!" : "🔥 Соперник попал!");
+      }
+    } else if (m.t === "result" && inBattle && mode === "pvp" && !gameOver) {
+      const { r, c, res, cells, over } = m;
+      if (!Number.isInteger(r) || !Number.isInteger(c) || !inRange(r, c)) return;
+      if (res === "miss") enemyView[r][c] = 2;
+      else {
+        enemyView[r][c] = 3;
+        if (res === "sunk" && Array.isArray(cells)) markSunk(enemyView, cells);
+      }
+      feedback(res);
+      updateBattle();
+      if (over) {
+        finish(true, "🏆 Победа! Вражеский флот уничтожен.");
+      } else if (res === "miss") {
+        myTurn = false;
+        setStatus("⏳ Ход соперника…");
+      } else {
+        myTurn = true;
+        setStatus(res === "sunk" ? "💥 Потопил! Стреляй ещё." : "🔥 Попал! Стреляй ещё.");
+      }
+    } else if (m.t === "leave" && inBattle && mode === "pvp" && !gameOver) {
+      finish(true, "🏳️ Соперник сдался. Победа!");
+    }
+  }
+
+  // ===== МЕНЮ И РЕКОРДЫ =====
+  function doExit() {
+    cleanupPeer();
+    inBattle = false;
+    gameOver = false;
+    myTurn = true;
+    showView("setup");
+    updateSetupUI();
+    setStatus("Нажми на корабль, чтобы переместить или повернуть его!");
+  }
+
+  function backToMenu() {
+    if (inBattle && !gameOver) {
+      askConfirm("Сдаться и выйти в меню? Засчитается поражение.", ok => {
+        if (!ok) return;
+        if (mode === "pvp" && conn && conn.open) {
+          try { conn.send({ t: "leave" }); } catch (e) {}
+        }
+        recordResult(false, mode === "pvp");
+        doExit();
+      });
+    } else {
+      doExit();
+    }
+  }
+
+  const RANKS = [
+    { min: 0, name: "Юнга" },
+    { min: 100, name: "Матрос" },
+    { min: 200, name: "Старшина" },
+    { min: 350, name: "Лейтенант" },
+    { min: 500, name: "Капитан" },
+    { min: 750, name: "Адмирал" }
+  ];
+
+  function rankIndex(rating) {
+    let idx = 0;
+    RANKS.forEach((r, i) => { if (rating >= r.min) idx = i; });
+    return idx;
+  }
+
+  function openLeaderboard() {
+    const total = playerStats.wins + playerStats.losses;
+    const winRate = total ? Math.round((playerStats.wins / total) * 100) : 0;
+    const cur = rankIndex(playerStats.rating);
+    const list = document.getElementById("leaderList");
+    let html = `
+      <div class="leader-item me">
+        <span>👤 <b>${getUserName()}</b></span>
+        <span><b>${playerStats.rating}</b> 🏆</span>
+      </div>
+      <div class="leader-item">
+        <span>Победы / Поражения</span>
+        <span>${playerStats.wins} / ${playerStats.losses} (${winRate}%)</span>
+      </div>
+      <div class="board-label" style="text-align:center; margin-top:6px;">Звания</div>`;
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+      html += `
+      <div class="leader-item ${i === cur ? "me" : ""}">
+        <span>${i === cur ? "⭐ " : ""}${RANKS[i].name}</span>
+        <span>от ${RANKS[i].min}</span>
+      </div>`;
+    }
+    list.innerHTML = html;
+    document.getElementById("leaderboardModal").classList.remove("hidden");
+  }
+
+  function closeLeaderboard() {
+    document.getElementById("leaderboardModal").classList.add("hidden");
+  }
+
+  // ===== СТАРТ =====
+  loadStats();
+  unplacedQueue = [];
+  randomizeMyBoard();
+  if (tg.ready) tg.ready();
+</script>
+</body>
+</html>
