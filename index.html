@@ -463,6 +463,7 @@
       const newCoords = buildCoords(r, c, ship.length, isShipHorizontal(ship));
       if (canPlaceShip(newCoords, selectedShipIdx)) {
         myShips[selectedShipIdx] = newCoords;
+        if (unplacedQueue.length > 0) selectedShipIdx = null; // дальше продолжаем расстановку из дока
         rebuildBoardFromShips();
         haptic("hit");
         setStatus("✅ Корабль перемещен!");
@@ -478,7 +479,7 @@
       if (canPlaceShip(newCoords, null)) {
         unplacedQueue.shift();
         myShips.push(newCoords);
-        selectedShipIdx = myShips.length - 1;
+        selectedShipIdx = null; // не выделяем, иначе следующий тап переносит этот корабль
         rebuildBoardFromShips();
         haptic("hit");
         updateSetupUI();
